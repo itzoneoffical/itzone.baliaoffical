@@ -3869,9 +3869,9 @@ async function deletePurchase(id) {
     if(!await showConfirm('"'+(p?p.prodName:'এই')+'" ক্রয়টি মুছে ফেলবেন? (স্টক থেকেও কমবে)'))return;
     // Remove qty from product stock
     if(p&&p.prodId){
-        const prod=db.products.find(x=>x.id===p.prodId);
+        const prod=db.products.find(x=>String(x.id)===String(p.prodId));
         if(prod){
-            const idx=db.products.findIndex(x=>x.id===prod.id);
+            const idx=db.products.findIndex(x=>String(x.id)===String(prod.id));
             db.products[idx].qty=Math.max(0,db.products[idx].qty-p.qty);
         }
     }
@@ -3905,12 +3905,12 @@ async function savePurchase(e) {
         db.products.push(newProd);
         prodId=newId;
     } else if(selVal) {
-        // বিদ্যমান পণ্য
-        prodId=parseInt(selVal);
+        // বিদ্যমান পণ্য — String এবং Number দুটোই match করবে
         buyPrice=parseFloat(document.getElementById('purchase-buy-price-exist').value)||0;
         sellPrice=parseFloat(document.getElementById('purchase-sell-price-exist').value)||0;
-        const idx=db.products.findIndex(p=>p.id===prodId);
+        const idx=db.products.findIndex(p=>String(p.id)===String(selVal));
         if(idx!==-1){
+            prodId=db.products[idx].id; // সবসময় DB থেকে original id নাও
             prodName=db.products[idx].name;
             image=db.products[idx].image||'';
             // নতুন ক্রয়ে সবসময় স্টক যোগ হবে (এডিট মোডে নিচে আলাদাভাবে হ্যান্ডেল হবে)
@@ -3929,12 +3929,12 @@ async function savePurchase(e) {
     if(editingPurchaseId!==null){
         const old=db.purchases.find(x=>x.id===editingPurchaseId);
         if(old&&old.prodId){
-            const idx=db.products.findIndex(p=>p.id===old.prodId);
+            const idx=db.products.findIndex(p=>String(p.id)===String(old.prodId));
             if(idx!==-1) db.products[idx].qty=Math.max(0,db.products[idx].qty-old.qty);
         }
         db.purchases=db.purchases.map(x=>x.id===editingPurchaseId?{...x,date:d,prodId,prodName,buyPrice,sellPrice,qty,method,details}:x);
         if(prodId){
-            const idx=db.products.findIndex(p=>p.id===prodId);
+            const idx=db.products.findIndex(p=>String(p.id)===String(prodId));
             if(idx!==-1) db.products[idx].qty+=qty;
         }
         saveDB(db); showToast('ক্রয় আপডেট হয়েছে ও স্টক সংশোধিত হয়েছে!','success');

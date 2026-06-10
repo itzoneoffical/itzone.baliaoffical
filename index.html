@@ -1039,12 +1039,16 @@ setTimeout(hideLoadingScreen, 5000); // সর্বোচ্চ ৫ সেক�
         <form onsubmit="savePurchase(event)">
             <input type="hidden" id="editing-purchase-id" value="">
             <div class="form-group"><label>ক্রয়ের তারিখ</label><input type="date" id="purchase-date" required></div>
-            <div class="form-group">
+            <div class="form-group" style="position:relative;">
                 <label>পণ্য সিলেক্ট করুন</label>
-                <select id="purchase-product-select" onchange="onPurchaseProductChange()">
-                    <option value="">-- পণ্য বাছুন --</option>
-                    <option value="new">🆕 নতুন মাল ক্রয়</option>
-                </select>
+                <input type="text" id="purchase-product-search" autocomplete="off"
+                    placeholder="🔍 পণ্যের নাম লিখুন বা বাছুন..."
+                    oninput="onPurchaseSearchInput(this.value)"
+                    onfocus="onPurchaseSearchInput(this.value)"
+                    style="width:100%;padding:10px 14px;border:2px solid #86efac;border-radius:8px;font-size:15px;font-family:inherit;outline:none;box-sizing:border-box;">
+                <input type="hidden" id="purchase-product-select" value="">
+                <div id="purchase-product-dropdown" style="display:none;position:absolute;left:0;right:0;background:#fff;border:2px solid #86efac;border-top:none;border-radius:0 0 8px 8px;z-index:999;max-height:220px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,0.13);">
+                </div>
             </div>
             <div id="purchase-new-fields" style="display:none;">
                 <div class="form-group">
@@ -3705,21 +3709,62 @@ function previewPurchaseImage(input) {
 
 // purchase dropdown সবসময় fresh data দিয়ে rebuild করো
 function refreshPurchaseDropdown() {
-    const db = loadDB();
-    const sel = document.getElementById('purchase-product-select');
-    if(!sel) return;
-    const prev = sel.value;
-    sel.innerHTML = '<option value="">-- পণ্য বাছুন --</option><option value="new">🆕 নতুন মাল ক্রয়</option>';
-    db.products.forEach(p => {
-        const o = document.createElement('option');
-        o.value = p.id;
-        o.textContent = p.name + ' (স্টক: ' + p.qty + ')';
-        sel.appendChild(o);
-    });
-    // আগের selection ধরে রাখো (যদি এখনও থাকে)
-    if(prev && sel.querySelector('option[value="'+prev+'"]')) sel.value = prev;
-    else sel.value = '';
+    // নতুন searchable dropdown — শুধু DB লোড করে রাখো, UI তে কিছু করার নেই
+    // (onPurchaseSearchInput ডাকলে dropdown রিফ্রেশ হবে)
 }
+function _getPurchaseProducts() {
+    const db = loadDB();
+    return db.products || [];
+}
+function onPurchaseSearchInput(query) {
+    const dd = document.getElementById('purchase-product-dropdown');
+    const hiddenSel = document.getElementById('purchase-product-select');
+    if(!dd) return;
+    const products = _getPurchaseProducts();
+    const q = (query||'').trim().toLowerCase();
+    // নতুন মাল সবসময় দেখাও
+    let items = [];
+    items.push({id:'new', label:'🆕 নতুন মাল ক্রয়'});
+    products.forEach(p => {
+        if(!q || p.name.toLowerCase().includes(q)) {
+            items.push({id: p.id, label: p.name + ' (স্টক: ' + (p.qty||0) + ')'});
+        }
+    });
+    if(items.length === 0) {
+        dd.innerHTML = '<div style="padding:10px 14px;color:#888;font-size:14px;">কোনো পণ্য পাওয়া যায়নি</div>';
+    } else {
+        dd.innerHTML = items.map(it =>
+            `<div class="purch-dd-item" onclick="selectPurchaseProduct('${it.id}','${it.label.replace(/'/g,"\\'")}')"
+              style="padding:10px 14px;cursor:pointer;font-size:14px;border-bottom:1px solid #f0fdf4;font-family:inherit;"
+              onmouseover="this.style.background='#f0fdf4'" onmouseout="this.style.background=''">${it.label}</div>`
+        ).join('');
+    }
+    dd.style.display = 'block';
+}
+function selectPurchaseProduct(id, label) {
+    const hiddenSel = document.getElementById('purchase-product-select');
+    const searchInput = document.getElementById('purchase-product-search');
+    const dd = document.getElementById('purchase-product-dropdown');
+    hiddenSel.value = id;
+    if(id === 'new') {
+        searchInput.value = '';
+        searchInput.placeholder = '🆕 নতুন মাল ক্রয় মোড';
+    } else {
+        // শুধু পণ্যের নামটা দেখাও (স্টক বাদ দিয়ে)
+        const products = _getPurchaseProducts();
+        const p = products.find(x => String(x.id) === String(id));
+        searchInput.value = p ? p.name : label;
+    }
+    dd.style.display = 'none';
+    onPurchaseProductChange();
+}
+document.addEventListener('click', function(e) {
+    const dd = document.getElementById('purchase-product-dropdown');
+    const inp = document.getElementById('purchase-product-search');
+    if(dd && inp && !dd.contains(e.target) && e.target !== inp) {
+        dd.style.display = 'none';
+    }
+});
 function initPurchasePage() {
     document.getElementById('purchase-date').value=today();
     refreshPurchaseDropdown();
@@ -3745,7 +3790,7 @@ function onPurchaseProductChange() {
         newFields.style.display='none';
         existFields.style.display='block';
         buyPriceNew.required=false;
-        const db=loadDB(); const p=db.products.find(x=>x.id===parseInt(selVal));
+        const db=loadDB(); const p=db.products.find(x=>String(x.id)===String(selVal));
         if(p){
             document.getElementById('purchase-buy-price-exist').value=p.buyPrice;
             document.getElementById('purchase-sell-price-exist').value=p.sellPrice;
@@ -3762,6 +3807,8 @@ function resetPurchaseForm() {
     document.getElementById('purchase-date').value=today();
     refreshPurchaseDropdown();
     document.getElementById('purchase-product-select').value='';
+    const psi=document.getElementById('purchase-product-search'); if(psi){psi.value='';psi.placeholder='🔍 পণ্যের নাম লিখুন বা বাছুন...';}
+    const pdd=document.getElementById('purchase-product-dropdown'); if(pdd) pdd.style.display='none';
     document.getElementById('purchase-product-name').value='';
     document.getElementById('purchase-buy-price').value='';
     document.getElementById('purchase-sell-price').value='';
@@ -3791,8 +3838,10 @@ function editPurchase(id) {
 
     // পণ্য সিলেক্ট ড্রপডাউন সেট করুন
     const sel=document.getElementById('purchase-product-select');
-    if(p.prodId && sel.querySelector('option[value="'+p.prodId+'"]')){
+    const searchInp=document.getElementById('purchase-product-search');
+    if(p.prodId && _getPurchaseProducts().find(x=>String(x.id)===String(p.prodId))){
         sel.value=p.prodId;
+        if(searchInp) searchInp.value=p.prodName||'';
         // বিদ্যমান পণ্যের ফিল্ড দেখাও
         document.getElementById('purchase-new-fields').style.display='none';
         document.getElementById('purchase-existing-fields').style.display='block';
@@ -3801,6 +3850,7 @@ function editPurchase(id) {
     } else {
         // prodId নেই বা ড্রপডাউনে নেই — নতুন হিসেবে দেখাও
         sel.value='new';
+        if(searchInp){searchInp.value='';searchInp.placeholder='🆕 নতুন মাল ক্রয় মোড';}
         document.getElementById('purchase-new-fields').style.display='block';
         document.getElementById('purchase-existing-fields').style.display='none';
         document.getElementById('purchase-product-name').value=p.prodName||'';
@@ -3907,6 +3957,8 @@ async function savePurchase(e) {
         loadStockTable();
         renderDashProductGallery();
         document.getElementById('purchase-product-select').value='';
+        const _psi=document.getElementById('purchase-product-search'); if(_psi){_psi.value='';_psi.placeholder='🔍 পণ্যের নাম লিখুন বা বাছুন...';}
+        const _pdd=document.getElementById('purchase-product-dropdown'); if(_pdd) _pdd.style.display='none';
         document.getElementById('purchase-product-name').value='';
         document.getElementById('purchase-buy-price').value='';
         document.getElementById('purchase-sell-price').value='';
